@@ -1,3 +1,5 @@
+pub mod utf8;
+
 #[cfg(test)]
 mod tests {
     #[test]
