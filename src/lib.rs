@@ -1,3 +1,4 @@
+mod regex;
 pub mod utf8;
 
 #[cfg(test)]
