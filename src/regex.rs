@@ -15,7 +15,7 @@ pub struct Regex {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum RegexError {
+pub enum RegexParseError {
     #[error("parse error: 'expected regular expression'")]
     MissingParseResultError,
     #[error(
@@ -24,21 +24,42 @@ pub enum RegexError {
         .0.first().map_or("", |e| &e.error[..]),
     )]
     ParseError(parsable::ParseErrorStack),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RegexError {
+    #[error("{0}")]
+    ParseError(RegexParseError),
     #[error("invalid utf8 codepoint: {0}")]
     Utf8DecodeError(Utf8DecodeError),
 }
 
 impl Regex {
-    pub fn parse(buffer: &[u8]) -> Result<Regex, RegexError> {
-        let mut stream = parsable::ScopedStream::new(buffer);
+    pub fn parse_str(source: &str) -> Result<Regex, RegexParseError> {
+        Regex::parse(source.as_bytes()).map_err(|e| match e {
+            RegexError::ParseError(e) => e,
+            RegexError::Utf8DecodeError(_) => panic!(
+                "valid UTF-8 string shouldn't result in UTF-8 decoding error"
+            ),
+        })
+    }
+
+    pub fn parse(source: &[u8]) -> Result<Regex, RegexError> {
+        let mut stream = parsable::ScopedStream::new(source);
         let outcome = RegexAst::parse(&mut stream);
         let regex = match outcome {
             None => {
-                return Err(RegexError::MissingParseResultError);
+                return Err(RegexError::ParseError(
+                    RegexParseError::MissingParseResultError,
+                ));
             }
             Some(result) => match result {
                 Ok(regex) => regex,
-                Err(e) => return Err(RegexError::ParseError(e)),
+                Err(e) => {
+                    return Err(RegexError::ParseError(
+                        RegexParseError::ParseError(e),
+                    ));
+                }
             },
         };
 
