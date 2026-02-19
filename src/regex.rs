@@ -1,13 +1,18 @@
+use crate::math::{BitMatrix, BitVector};
 use crate::regex::graph::{Graph, NodeRef};
 use crate::regex::parse::{Atom, ConcatExpr, RegexAst};
-use crate::utf8::Utf8DecodeError;
+use crate::utf8::{UnicodeCodepoint, Utf8DecodeError};
 use parsable::Parsable;
+use std::collections::HashMap;
 
 mod compile;
 mod graph;
 mod parse;
 
-pub struct Regex {}
+pub struct Regex {
+    token_matrices: HashMap<UnicodeCodepoint, BitMatrix>,
+    final_nodes: BitVector,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum RegexError {
@@ -47,13 +52,14 @@ impl Regex {
                 .map_err(RegexError::Utf8DecodeError)?;
         }
 
-        println!("{}", graph.debug_string());
-
         graph.collapse_epsilons();
 
-        println!("{}", graph.debug_string());
+        let (token_matrices, final_nodes) = graph.compile();
 
-        todo!()
+        Ok(Regex {
+            token_matrices,
+            final_nodes,
+        })
     }
 }
 

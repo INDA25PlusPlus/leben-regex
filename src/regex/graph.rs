@@ -1,4 +1,6 @@
+use crate::math::{BitMatrix, BitVector};
 use crate::utf8::UnicodeCodepoint;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static GRAPH_ID: AtomicUsize = AtomicUsize::new(0);
@@ -138,9 +140,30 @@ impl Graph {
         }
     }
 
+    pub fn compile(&self) -> (HashMap<UnicodeCodepoint, BitMatrix>, BitVector) {
+        let mut token_matrices = HashMap::new();
+        let mut final_nodes = BitVector::new(self.nodes.len());
+
+        let n = self.nodes.len();
+
+        for (a_node, a) in self.nodes.iter().zip(0_usize..) {
+            if a_node.is_final {
+                final_nodes.set(a, true);
+            }
+            for (b, token) in &a_node.edges {
+                let matrix = token_matrices
+                    .entry(*token)
+                    .or_insert(BitMatrix::new(n, n));
+                matrix.set(*b, a, true);
+            }
+        }
+
+        (token_matrices, final_nodes)
+    }
+
     pub fn debug_string(&self) -> String {
         let mut s = String::new();
-        for (a_node, a) in self.nodes.iter().zip(0..) {
+        for (a_node, a) in self.nodes.iter().zip(0_usize..) {
             for (b, token) in &a_node.edges {
                 s.push_str(&format!("{} {} {}\n", a, b, char::from(*token)));
             }
