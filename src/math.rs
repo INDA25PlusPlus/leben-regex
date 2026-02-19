@@ -132,4 +132,9 @@ impl BitVector {
             *value = false;
         })
     }
+
+    pub fn dot(a: &BitVector, b: &BitVector) -> bool {
+        assert_eq!(a.size, b.size);
+        a.iter().any(|(i, value)| *value && b.get(i))
+    }
 }
