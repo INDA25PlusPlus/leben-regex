@@ -82,6 +82,24 @@ impl Regex {
             final_nodes,
         })
     }
+
+    pub fn execute(&self, string: &[UnicodeCodepoint]) -> bool {
+        let mut accumulator = BitVector::new(self.final_nodes.size);
+        // start node
+        accumulator.set(0, true);
+
+        let mut temp = BitVector::new(accumulator.size);
+
+        for token in string {
+            let Some(matrix) = self.token_matrices.get(token) else {
+                return false;
+            };
+            BitVector::mult(matrix, &accumulator, &mut temp);
+            std::mem::swap(&mut accumulator, &mut temp);
+        }
+
+        BitVector::dot(&accumulator, &self.final_nodes)
+    }
 }
 
 fn add_alt(
@@ -111,4 +129,28 @@ fn add_alt(
         graph.connect_epsilon(prev, end);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utf8;
+
+    #[test]
+    fn execute_regex() {
+        fn test(r: &str, s: &str) -> bool {
+            Regex::parse(r.as_bytes())
+                .unwrap()
+                .execute(&utf8::decode_utf8(s.as_bytes()).unwrap())
+        }
+
+        assert!(test("a(a(b|cd)*|ab)*c", "ac"));
+        assert!(test("a(a(b|cd)*|ab)*c", "aac"));
+        assert!(test("a(a(b|cd)*|ab)*c", "aabbbbabc"));
+        assert!(test("a(a(b|cd)*|ab)*c", "aabbabacdcdabc"));
+
+        assert!(!test("a(a(b|cd)*|ab)*c", ""));
+        assert!(!test("a(a(b|cd)*|ab)*c", "a"));
+        assert!(!test("a(a(b|cd)*|ab)*c", "c"));
+    }
 }
