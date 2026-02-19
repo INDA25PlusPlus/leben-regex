@@ -1,3 +1,6 @@
 mod math;
-pub mod regex;
-pub mod utf8;
+mod regex;
+mod utf8;
+
+pub use regex::*;
+pub use utf8::*;

@@ -1,4 +1,4 @@
-use crate::math::{BitMatrix, BitVector};
+use crate::math::{BitMatrix, BitVector, NfaVector};
 use crate::regex::graph::{Graph, NodeRef};
 use crate::regex::parse::{Atom, ConcatExpr, RegexAst};
 use crate::utf8::{UnicodeCodepoint, Utf8DecodeError};
@@ -35,8 +35,8 @@ pub enum RegexError {
 }
 
 impl Regex {
-    pub fn parse_str(source: &str) -> Result<Regex, RegexParseError> {
-        Regex::parse(source.as_bytes()).map_err(|e| match e {
+    pub fn new_from_str(source: &str) -> Result<Regex, RegexParseError> {
+        Regex::new(source.as_bytes()).map_err(|e| match e {
             RegexError::ParseError(e) => e,
             RegexError::Utf8DecodeError(_) => panic!(
                 "valid UTF-8 string shouldn't result in UTF-8 decoding error"
@@ -44,7 +44,7 @@ impl Regex {
         })
     }
 
-    pub fn parse(source: &[u8]) -> Result<Regex, RegexError> {
+    pub fn new(source: &[u8]) -> Result<Regex, RegexError> {
         let mut stream = parsable::ScopedStream::new(source);
         let outcome = RegexAst::parse(&mut stream);
         let regex = match outcome {
@@ -83,7 +83,8 @@ impl Regex {
         })
     }
 
-    pub fn execute(&self, string: &[UnicodeCodepoint]) -> bool {
+    /// returns: whether the entire string matches the regex
+    pub fn test(&self, string: &[UnicodeCodepoint]) -> bool {
         let mut accumulator = BitVector::new(self.final_nodes.size);
         // start node
         accumulator.set(0, true);
@@ -99,6 +100,36 @@ impl Regex {
         }
 
         BitVector::dot(&accumulator, &self.final_nodes)
+    }
+
+    /// returns: the starting index and length of the first match, if any
+    pub fn find(&self, string: &[UnicodeCodepoint]) -> Option<(usize, usize)> {
+        let mut accumulator = NfaVector::new(self.final_nodes.size);
+        let mut temp = NfaVector::new(accumulator.size);
+
+        // special case for initial final node
+        accumulator.set(0, Some(0));
+        if NfaVector::dot(&accumulator, &self.final_nodes).is_some() {
+            return Some((0, 0));
+        }
+
+        for (token, index) in string.iter().zip(0_usize..) {
+            accumulator.set(0, Some(index));
+
+            let Some(matrix) = self.token_matrices.get(token) else {
+                accumulator.reset();
+                continue;
+            };
+            NfaVector::mult(matrix, &accumulator, &mut temp);
+            std::mem::swap(&mut accumulator, &mut temp);
+
+            if let Some(start_index) =
+                NfaVector::dot(&accumulator, &self.final_nodes)
+            {
+                return Some((start_index, index - start_index + 1));
+            }
+        }
+        None
     }
 }
 
@@ -137,12 +168,18 @@ mod tests {
     use crate::utf8;
 
     #[test]
-    fn execute_regex() {
+    fn regex_test() {
         fn test(r: &str, s: &str) -> bool {
-            Regex::parse(r.as_bytes())
+            Regex::new(r.as_bytes())
                 .unwrap()
-                .execute(&utf8::decode_utf8(s.as_bytes()).unwrap())
+                .test(&utf8::decode_utf8(s.as_bytes()).unwrap())
         }
+
+        assert!(test("", ""));
+        assert!(!test("", "a"));
+
+        assert!(!test("a", "ab"));
+        assert!(!test("ab", "a"));
 
         assert!(test("a(a(b|cd)*|ab)*c", "ac"));
         assert!(test("a(a(b|cd)*|ab)*c", "aac"));
@@ -152,5 +189,32 @@ mod tests {
         assert!(!test("a(a(b|cd)*|ab)*c", ""));
         assert!(!test("a(a(b|cd)*|ab)*c", "a"));
         assert!(!test("a(a(b|cd)*|ab)*c", "c"));
+    }
+
+    #[test]
+    fn regex_find() {
+        fn find(r: &str, s: &str) -> Option<(usize, usize)> {
+            Regex::new(r.as_bytes())
+                .unwrap()
+                .find(&utf8::decode_utf8(s.as_bytes()).unwrap())
+        }
+
+        assert_eq!(find("", ""), Some((0, 0)));
+        assert_eq!(find("", "a"), Some((0, 0)));
+
+        assert_eq!(find("a", "ab"), Some((0, 1)));
+        assert_eq!(find("ab", "a"), None);
+
+        assert_eq!(find("a(a(b|cd)*|ab)*c", "ac"), Some((0, 2)));
+        assert_eq!(find("a(a(b|cd)*|ab)*c", "aac"), Some((0, 3)));
+        assert_eq!(find("a(a(b|cd)*|ab)*c", "aabbbbabc"), Some((0, 9)));
+        assert_eq!(find("a(a(b|cd)*|ab)*c", "aabbabacdcdabc"), Some((0, 8)));
+
+        assert_eq!(find("a(a(b|cd)*|ab)*c", ""), None);
+        assert_eq!(find("a(a(b|cd)*|ab)*c", "a"), None);
+        assert_eq!(find("a(a(b|cd)*|ab)*c", "c"), None);
+
+        assert_eq!(find("(a|bc)*(c|db)", "abcbcdcadb"), Some((2, 1)));
+        assert_eq!(find("(a|bc)*db", "abcbcdcadb"), Some((7, 3)));
     }
 }
