@@ -47,7 +47,11 @@ impl Regex {
                 .map_err(RegexError::Utf8DecodeError)?;
         }
 
-        println!("{graph:?}");
+        println!("{}", graph.debug_string());
+
+        graph.collapse_epsilons();
+
+        println!("{}", graph.debug_string());
 
         todo!()
     }

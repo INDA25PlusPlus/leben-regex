@@ -116,4 +116,38 @@ impl Graph {
     pub fn set_final(&mut self, x: NodeRef) {
         self.get_node_mut(x).is_final = true;
     }
+
+    pub fn collapse_epsilons(&mut self) {
+        for a in 0..self.nodes.len() {
+            while let Some(b) = self.nodes[a].epsilon_edges.pop() {
+                if a == b {
+                    continue;
+                }
+                if self.nodes[b].is_final {
+                    self.nodes[a].is_final = true;
+                }
+                for i in 0..self.nodes[b].edges.len() {
+                    let c = self.nodes[b].edges[i];
+                    self.nodes[a].edges.push(c);
+                }
+                for i in 0..self.nodes[b].epsilon_edges.len() {
+                    let c = self.nodes[b].epsilon_edges[i];
+                    self.nodes[a].epsilon_edges.push(c);
+                }
+            }
+        }
+    }
+
+    pub fn debug_string(&self) -> String {
+        let mut s = String::new();
+        for (a_node, a) in self.nodes.iter().zip(0..) {
+            for (b, token) in &a_node.edges {
+                s.push_str(&format!("{} {} {}\n", a, b, char::from(*token)));
+            }
+            for b in &a_node.epsilon_edges {
+                s.push_str(&format!("{} {} ε\n", a, b));
+            }
+        }
+        s
+    }
 }
