@@ -1,19 +1,23 @@
-use parsable::{CharLiteral, CharRange, Intersperse, Parsable, RepeatLimited, Span, WithEnd, ZeroPlus};
+use crate::utf8::{UnicodeCodepoint, Utf8DecodeError, decode_utf8};
+use parsable::{
+    CharLiteral, CharRange, Intersperse, Parsable, RepeatLimited, Span,
+    WithEnd, ZeroPlus,
+};
 use serde::Serialize;
 
 #[derive(Debug, Parsable, Serialize)]
 pub struct RegexAst {
-    pub alt: WithEnd<AltExpr>,
+    pub root: WithEnd<AltExpr>,
 }
 
 #[derive(Debug, Parsable, Serialize)]
 pub struct AltExpr {
-    pub concats: Intersperse<ConcatExpr, CharLiteral<b'|'>>,
+    pub alts: Intersperse<ConcatExpr, CharLiteral<b'|'>>,
 }
 
 #[derive(Debug, Parsable, Serialize)]
 pub struct ConcatExpr {
-    pub kleenes: ZeroPlus<KleeneExpr>,
+    pub parts: ZeroPlus<KleeneExpr>,
 }
 
 #[derive(Debug, Parsable, Serialize)]
@@ -37,6 +41,36 @@ pub enum Character {
     Ascii(Span<AsciiCharacter>),
     Unicode(Span<UnicodeCharacter>),
     Escaped(EscapedCharacter),
+}
+
+impl Character {
+    pub fn to_codepoint(&self) -> Result<UnicodeCodepoint, Utf8DecodeError> {
+        match self {
+            Character::Ascii(s) => Ok(UnicodeCodepoint::try_from(
+                *s.span
+                    .first()
+                    .expect("ascii character span should not be empty")
+                    as u32,
+            )
+            .expect("ascii character should be a valid unicode codepoint")),
+            Character::Unicode(s) => {
+                let s = decode_utf8(&s.span)?;
+                assert_eq!(
+                    s.len(),
+                    1,
+                    "single unicode codepoint should be decoded as exactly one codepoint"
+                );
+                Ok(*s.first().unwrap())
+            }
+            Character::Escaped(e) => match e {
+                EscapedCharacter::LeftParen => Ok('('.into()),
+                EscapedCharacter::RightParen => Ok(')'.into()),
+                EscapedCharacter::Asterisk => Ok('*'.into()),
+                EscapedCharacter::Backslash => Ok('\\'.into()),
+                EscapedCharacter::VerticalBar => Ok('|'.into()),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Parsable, Serialize)]

@@ -1,10 +1,13 @@
-mod regex;
+pub mod regex;
 pub mod utf8;
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test() {
-        assert_eq!(0, 0);
+        let r = "a(a(b|cd)*|ab)*c".as_bytes();
+        regex::Regex::parse(r).unwrap();
     }
 }

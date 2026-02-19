@@ -1,31 +1,83 @@
-use crate::regex::parse::RegexAst;
-use parsable::{format_error_stack, Parsable, ScopedStream};
+use crate::regex::graph::{Graph, NodeRef};
+use crate::regex::parse::{Atom, ConcatExpr, RegexAst};
+use crate::utf8::Utf8DecodeError;
+use parsable::Parsable;
 
 mod compile;
 mod graph;
 mod parse;
 
-struct Regex {}
+pub struct Regex {}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RegexError {
+    #[error("parse error: 'expected regular expression'")]
+    MissingParseResultError,
+    #[error(
+        "parse error at index {}: 'expected {}'",
+        .0.first().map_or(0, |e| e.source_position),
+        .0.first().map_or("", |e| &e.error[..]),
+    )]
+    ParseError(parsable::ParseErrorStack),
+    #[error("invalid utf8 codepoint: {0}")]
+    Utf8DecodeError(Utf8DecodeError),
+}
 
 impl Regex {
-    pub fn parse(buffer: &[u8]) -> Result<Regex, ()> {
-        let mut stream = ScopedStream::new(buffer);
-        let regex = RegexAst::parse(&mut stream).expect("failed to parse");
+    pub fn parse(buffer: &[u8]) -> Result<Regex, RegexError> {
+        let mut stream = parsable::ScopedStream::new(buffer);
+        let outcome = RegexAst::parse(&mut stream);
+        let regex = match outcome {
+            None => {
+                return Err(RegexError::MissingParseResultError);
+            }
+            Some(result) => match result {
+                Ok(regex) => regex,
+                Err(e) => return Err(RegexError::ParseError(e)),
+            },
+        };
 
-        match regex {
-            Ok(parsed) => {
-                let config = ron::ser::PrettyConfig::default();
-                let output =
-                    ron::ser::to_string_pretty(&parsed, config).unwrap();
-                let output_path = std::path::Path::new("out.ron");
-                std::fs::write(output_path, output).expect(
-                    "failed to write file",
-                );
-            }
-            Err(err) => {
-                eprintln!("{}", format_error_stack(&buffer, err));
-            }
+        let mut graph = Graph::new();
+        let start_node = graph.get_initial_node();
+        let final_node = graph.add_node();
+        graph.set_final(final_node);
+
+        for a in regex.root.node.alts.nodes {
+            add_alt(&mut graph, start_node, final_node, a)
+                .map_err(RegexError::Utf8DecodeError)?;
         }
+
+        println!("{graph:?}");
+
         todo!()
     }
+}
+
+fn add_alt(
+    graph: &mut Graph,
+    start: NodeRef,
+    end: NodeRef,
+    alt: ConcatExpr,
+) -> Result<(), Utf8DecodeError> {
+    let mut prev = start;
+    for p in alt.parts.nodes {
+        let is_kleene = p.star.is_some();
+        let next = if is_kleene { prev } else { graph.add_node() };
+        match p.atom {
+            Atom::CharacterAtom(c) => {
+                let token = c.to_codepoint()?;
+                graph.connect(prev, next, token);
+            }
+            Atom::Capture { alt, .. } => {
+                for a in alt.alts.nodes {
+                    add_alt(graph, prev, next, a)?;
+                }
+            }
+        }
+        prev = next;
+    }
+    if prev != end {
+        graph.connect_epsilon(prev, end);
+    }
+    Ok(())
 }

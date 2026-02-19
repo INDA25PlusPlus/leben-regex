@@ -5,7 +5,5 @@ edition = "2024"
 
 [dependencies]
 parsable = { git = "https://github.com/LeonardBengtsson/parsing-library.git" }
-regex = "1.12.3"
-ron = "0.12.0"
 serde = "1.0.228"
 thiserror = "2.0.18"

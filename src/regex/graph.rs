@@ -3,22 +3,40 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static GRAPH_ID: AtomicUsize = AtomicUsize::new(0);
 
+#[derive(Debug)]
 pub struct Graph {
     nodes: Vec<Node>,
     id: usize,
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 struct Node {
     is_final: bool,
     edges: Vec<(usize, UnicodeCodepoint)>,
     epsilon_edges: Vec<usize>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct NodeRef {
     graph_id: usize,
     index: usize,
+}
+
+impl PartialEq for Graph {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for Graph {}
+
+impl Clone for Graph {
+    fn clone(&self) -> Self {
+        Graph {
+            nodes: self.nodes.clone(),
+            id: GRAPH_ID.fetch_add(1, Ordering::Relaxed),
+        }
+    }
 }
 
 impl Graph {
@@ -28,9 +46,7 @@ impl Graph {
             id: GRAPH_ID.fetch_add(1, Ordering::Relaxed),
         }
     }
-}
 
-impl Graph {
     fn owns_node(&self, x: NodeRef) -> bool {
         self.id == x.graph_id
     }
@@ -45,7 +61,7 @@ impl Graph {
         &mut self.nodes[x.index]
     }
 
-    pub fn get_start_node(&self) -> NodeRef {
+    pub fn get_initial_node(&self) -> NodeRef {
         NodeRef {
             graph_id: self.id,
             index: 0,
