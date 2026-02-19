@@ -2,6 +2,7 @@ use crate::regex::parse::RegexAst;
 use parsable::{format_error_stack, Parsable, ScopedStream};
 
 mod compile;
+mod graph;
 mod parse;
 
 struct Regex {}
