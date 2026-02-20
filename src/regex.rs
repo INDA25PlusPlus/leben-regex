@@ -113,6 +113,50 @@ impl Regex {
             return Some((0, 0));
         }
 
+        let mut earliest_match = None;
+
+        for (token, index) in string.iter().zip(0_usize..) {
+            if accumulator.get(0).is_none() {
+                accumulator.set(0, Some(index));
+            }
+
+            let Some(matrix) = self.token_matrices.get(token) else {
+                accumulator.reset();
+                continue;
+            };
+            NfaVector::mult(matrix, &accumulator, &mut temp);
+            std::mem::swap(&mut accumulator, &mut temp);
+
+            if let Some(match_index) =
+                NfaVector::dot(&accumulator, &self.final_nodes)
+            {
+                let current_match =
+                    Some((match_index, index - match_index + 1));
+                if let Some((earliest_match_index, _)) = earliest_match {
+                    if match_index < earliest_match_index {
+                        earliest_match = current_match;
+                    }
+                } else {
+                    earliest_match = current_match;
+                }
+            }
+        }
+        earliest_match
+    }
+
+    /// returns: the starting index and length of all matches
+    pub fn find_all(&self, string: &[UnicodeCodepoint]) -> Vec<(usize, usize)> {
+        let mut matches = Vec::new();
+
+        let mut accumulator = NfaVector::new(self.final_nodes.size);
+        let mut temp = NfaVector::new(accumulator.size);
+
+        // special case for initial final node
+        accumulator.set(0, Some(0));
+        if NfaVector::dot(&accumulator, &self.final_nodes).is_some() {
+            matches.push((0, 0));
+        }
+
         for (token, index) in string.iter().zip(0_usize..) {
             accumulator.set(0, Some(index));
 
@@ -126,10 +170,10 @@ impl Regex {
             if let Some(start_index) =
                 NfaVector::dot(&accumulator, &self.final_nodes)
             {
-                return Some((start_index, index - start_index + 1));
+                matches.push((start_index, index - start_index + 1));
             }
         }
-        None
+        matches
     }
 }
 
@@ -216,5 +260,15 @@ mod tests {
 
         assert_eq!(find("(a|bc)*(c|db)", "abcbcdcadb"), Some((2, 1)));
         assert_eq!(find("(a|bc)*db", "abcbcdcadb"), Some((7, 3)));
+
+        assert_eq!(find("aba|b", "aba"), Some((0, 3)));
+        assert_eq!(find("abb*|b", "abbba"), Some((0, 2)));
+
+        assert_eq!(find("A*aB*|D", "AAAa||||b\\"), Some((0, 4)));
+        assert_eq!(find("🔥*a\\|*|\\\\", "🔥🔥🔥a||||b\\"), Some((0, 4)));
+        assert_eq!(find("🔥*a\\|*b|\\\\", "🔥🔥🔥a||||b\\"), Some((0, 9)));
+        assert_eq!(find("🔥*a\\|*|\\\\", "🔥🔥🔥||||b\\"), Some((8, 1)));
+
+        assert_eq!(find("ab", "acab"), Some((2, 2)));
     }
 }
