@@ -88,6 +88,11 @@ pub fn encode_utf8(unicode: &[UnicodeCodepoint]) -> Vec<u8> {
     out
 }
 
+#[must_use]
+pub fn encode_utf8_string(unicode: &[UnicodeCodepoint]) -> String {
+    unicode.iter().map(|c| char::from(*c)).collect()
+}
+
 pub fn decode_utf8(
     utf8: &[u8],
 ) -> Result<Vec<UnicodeCodepoint>, Utf8DecodeError> {
